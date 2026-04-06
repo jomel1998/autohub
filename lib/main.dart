@@ -1,3 +1,4 @@
+// lib/main.dart
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
 import 'package:flutter/material.dart';
@@ -8,21 +9,18 @@ import 'core/config/supabase_config.dart';
 import 'core/theme/app_theme.dart';
 
 import 'features/car/presentation/provider/car_provider.dart';
+import 'features/car/presentation/provider/saved_cars_provider.dart';
 import 'features/car/presentation/pages/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // ── Initialize Supabase ───────────────────────────
   await Supabase.initialize(
     url: SupabaseConfig.url,
     anonKey: SupabaseConfig.anonKey,
   );
-
   runApp(const MyApp());
 }
 
-// Global Supabase client accessor
 final supabase = Supabase.instance.client;
 
 class MyApp extends StatelessWidget {
@@ -34,10 +32,12 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CarProvider()),
+        // ✅ SavedCarsProvider persists favourites across sessions
+        ChangeNotifierProvider(create: (_) => SavedCarsProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'Car Marketplace',
+        title: 'AutoHUB',
         theme: AppTheme.lightTheme,
         home: const _AuthGate(),
       ),
@@ -47,7 +47,6 @@ class MyApp extends StatelessWidget {
 
 class _AuthGate extends StatelessWidget {
   const _AuthGate();
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AuthState>(
@@ -58,10 +57,7 @@ class _AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        final session = supabase.auth.currentSession;
-        if (session != null) {
-          return const HomePage();
-        }
+        if (supabase.auth.currentSession != null) return const HomePage();
         return const LoginPage();
       },
     );

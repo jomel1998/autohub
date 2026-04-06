@@ -1,21 +1,25 @@
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
-import 'package:autohub/features/car/presentation/pages/profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/constants.dart';
 import '../../domain/entities/car.dart';
 import '../provider/car_provider.dart';
+import '../provider/saved_cars_provider.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/car_card.dart';
 import '../widgets/brand_chip.dart';
 import '../widgets/category_tab.dart';
 import 'add_car_page.dart';
+import 'chat_page.dart';
+import 'compare_page.dart';
+import 'profile_page.dart';
+import 'saved_cars_page.dart';
+import 'test_drive_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -25,47 +29,63 @@ class _HomePageState extends State<HomePage> {
   final _searchController = TextEditingController();
   int _currentIndex = 0;
 
-  Future<void> _onRefresh() async {
-    final carProvider = Provider.of<CarProvider>(context, listen: false);
-
-    // Refresh based on current state
-    if (carProvider.selectedCategory == 'All') {
-      // If using stream, you may need to re-trigger fetch
-      await carProvider.refreshCars(); // create this method
-    } else {
-      await carProvider.loadCarsByCategory(carProvider.selectedCategory);
-    }
-  }
-
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
+  // ── Bottom nav handler ─────────────────────────────
+  void _onNavTap(int i, AuthProvider auth) {
+    if (i == 1) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const TestDrivePage()),
+      );
+    } else if (i == 2) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SavedCarsPage()),
+      );
+    } else if (i == 3) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfilePage()),
+      );
+    } else {
+      setState(() => _currentIndex = i);
+    }
+  }
+
+  Future<void> _onRefresh(CarProvider carProvider) async {
+    if (carProvider.isSearching) {
+      await carProvider.searchCars(_searchController.text);
+    } else {
+      await carProvider.loadCarsByCategory(carProvider.selectedCategory);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final carProvider = Provider.of<CarProvider>(context);
+    final savedProv = Provider.of<SavedCarsProvider>(context);
 
     return Scaffold(
       key: _scaffoldKey,
       drawer: const AppDrawer(),
       backgroundColor: AppTheme.bgLight,
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _onRefresh,
-          child: Column(
-            children: [
-              _buildAppBar(context, auth),
-              _buildSearchBar(carProvider),
-              Expanded(
-                child: carProvider.isSearching
-                    ? _buildSearchResults(carProvider)
-                    : _buildBrowseView(carProvider),
-              ),
-            ],
-          ),
+        child: Column(
+          children: [
+            _buildAppBar(context, auth),
+            _buildSearchBar(carProvider),
+            Expanded(
+              child: carProvider.isSearching
+                  ? _buildSearchResults(carProvider)
+                  : _buildBrowseView(carProvider, savedProv),
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -86,32 +106,27 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (i) {
-          if (i == 3) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
-            );
-          } else {
-            setState(() => _currentIndex = i);
-          }
-        },
+        onTap: (i) => _onNavTap(i, auth),
         selectedItemColor: AppTheme.primaryBlue,
         unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.event_available),
             label: 'Test Drive',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_outline),
+            icon: Badge(
+              isLabelVisible: savedProv.count > 0,
+              label: Text('${savedProv.count}'),
+              child: const Icon(Icons.favorite_outline),
+            ),
             label: 'Saved',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
             label: 'Profile',
           ),
@@ -120,6 +135,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ── App bar ────────────────────────────────────────
   Widget _buildAppBar(BuildContext context, AuthProvider auth) {
     final name =
         auth.currentUser?.userMetadata?['name'] as String? ??
@@ -132,7 +148,6 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          // ✅ Menu icon now opens the drawer
           GestureDetector(
             onTap: () => _scaffoldKey.currentState?.openDrawer(),
             child: const Icon(Icons.menu, color: Colors.white),
@@ -148,6 +163,12 @@ class _HomePageState extends State<HomePage> {
                 letterSpacing: 0.5,
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ChatListPage())),
           ),
           if (auth.isLoggedIn)
             GestureDetector(
@@ -181,13 +202,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ── Search bar ─────────────────────────────────────
   Widget _buildSearchBar(CarProvider carProvider) {
     return Container(
       color: AppTheme.primaryBlue,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: TextField(
         controller: _searchController,
-        onChanged: (query) => carProvider.searchCars(query),
+        onChanged: (q) => carProvider.searchCars(q),
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           hintText: 'Search cars, brands...',
@@ -217,149 +239,184 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildBrowseView(CarProvider carProvider) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Quick actions
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildQuickAction(Icons.diamond_outlined, 'Luxury'),
-                _buildQuickAction(Icons.list_alt_outlined, 'My List'),
-                _buildQuickAction(Icons.compare_arrows, 'Compare'),
-                _buildQuickAction(Icons.chat_bubble_outline, 'Chat'),
-              ],
-            ),
-          ),
-
-          // Category tabs
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Browse by Type',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                CategoryTab(
-                  label: 'All',
-                  isSelected: carProvider.selectedCategory == 'All',
-                  onTap: () => carProvider.loadCarsByCategory('All'),
-                ),
-                ...AppConstants.carCategories.map(
-                  (c) => CategoryTab(
-                    label: c,
-                    isSelected: carProvider.selectedCategory == c,
-                    onTap: () => carProvider.loadCarsByCategory(c),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Most Searched Cars',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Car list — realtime stream for All, provider state for category
-          if (carProvider.selectedCategory == 'All')
-            StreamBuilder<List<Car>>(
-              stream: carProvider.getCars(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Error: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                  );
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty)
-                  return _buildEmptyState();
-                return _buildCarList(snapshot.data!);
-              },
-            )
-          else if (carProvider.isCategoryLoading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(),
+  // ── Browse view ────────────────────────────────────
+  Widget _buildBrowseView(
+    CarProvider carProvider,
+    SavedCarsProvider savedProv,
+  ) {
+    return RefreshIndicator(
+      onRefresh: () => _onRefresh(carProvider),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Quick actions
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _quickAction(Icons.diamond_outlined, 'Luxury', () {
+                    carProvider.loadCarsByCategory('Luxury');
+                  }),
+                  _quickAction(Icons.favorite_outline, 'Saved', () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SavedCarsPage()),
+                    );
+                  }),
+                  _quickAction(Icons.compare_arrows, 'Compare', () {
+                    final saved = savedProv.savedCars;
+                    if (saved.length < 2) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Save at least 2 cars first to compare them',
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ComparePage(carA: saved[0], carB: saved[1]),
+                      ),
+                    );
+                  }),
+                  _quickAction(Icons.chat_bubble_outline, 'Chat', () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ChatListPage()),
+                    );
+                  }),
+                ],
               ),
-            )
-          else if (carProvider.categoryResults.isEmpty)
-            _buildEmptyState()
-          else
-            _buildCarList(carProvider.categoryResults),
+            ),
 
-          // Popular Brands
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Popular Brands',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-                TextButton(onPressed: () {}, child: const Text('View All')),
-              ],
+            // Category tabs
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Browse by Type',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
             ),
-          ),
-          SizedBox(
-            height: 80,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: AppConstants.carBrands
-                  .map(
-                    (brand) => BrandChip(
-                      brand: brand,
-                      onTap: () => carProvider.setBrand(brand),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  CategoryTab(
+                    label: 'All',
+                    isSelected: carProvider.selectedCategory == 'All',
+                    onTap: () => carProvider.loadCarsByCategory('All'),
+                  ),
+                  ...AppConstants.carCategories.map(
+                    (c) => CategoryTab(
+                      label: c,
+                      isSelected: carProvider.selectedCategory == c,
+                      onTap: () => carProvider.loadCarsByCategory(c),
                     ),
-                  )
-                  .toList(),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 80),
-        ],
+
+            const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Most Searched Cars',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            if (carProvider.selectedCategory == 'All')
+              StreamBuilder<List<Car>>(
+                stream: carProvider.getCars(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return _buildEmptyState();
+                  }
+                  return _buildCarList(snapshot.data!);
+                },
+              )
+            else if (carProvider.isCategoryLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (carProvider.categoryResults.isEmpty)
+              _buildEmptyState()
+            else
+              _buildCarList(carProvider.categoryResults),
+
+            // Popular brands
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Popular Brands',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  TextButton(onPressed: () {}, child: const Text('View All')),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 80,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: AppConstants.carBrands
+                    .map(
+                      (brand) => BrandChip(
+                        brand: brand,
+                        onTap: () => carProvider.setBrand(brand),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 80),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildCarList(List<Car> cars) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: cars.length,
-      itemBuilder: (context, i) => CarCard(car: cars[i]),
-    );
-  }
+  Widget _buildCarList(List<Car> cars) => ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    itemCount: cars.length,
+    itemBuilder: (_, i) => CarCard(car: cars[i]),
+  );
 
   Widget _buildSearchResults(CarProvider carProvider) {
     if (carProvider.status == CarStatus.loading) {
@@ -380,70 +437,75 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: carProvider.searchResults.length,
-      itemBuilder: (_, i) => CarCard(car: carProvider.searchResults[i]),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          children: [
-            Icon(
-              Icons.directions_car_outlined,
-              size: 80,
-              color: Colors.grey.shade300,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'No cars listed yet',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textGrey,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap menu → Seed Dummy Data to add test cars',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textGrey),
-            ),
-          ],
-        ),
+    return RefreshIndicator(
+      onRefresh: () => _onRefresh(carProvider),
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: carProvider.searchResults.length,
+        itemBuilder: (_, i) => CarCard(car: carProvider.searchResults[i]),
       ),
     );
   }
 
-  Widget _buildQuickAction(IconData icon, String label) {
-    return Column(
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+  Widget _buildEmptyState() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(48),
+      child: Column(
+        children: [
+          Icon(
+            Icons.directions_car_outlined,
+            size: 80,
+            color: Colors.grey.shade300,
           ),
-          child: Icon(icon, color: AppTheme.primaryBlue, size: 28),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-        ),
-      ],
+          const SizedBox(height: 16),
+          const Text(
+            'No cars listed yet',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textGrey,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Tap Sell Car to add the first listing',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppTheme.textGrey),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _quickAction(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: AppTheme.primaryBlue, size: 28),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,30 +1,20 @@
+import 'package:autohub/features/car/presentation/provider/saved_cars_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/car.dart';
 import '../pages/car_detail_page.dart';
 
-class CarCard extends StatefulWidget {
+class CarCard extends StatelessWidget {
   final Car car;
   const CarCard({super.key, required this.car});
 
   @override
-  State<CarCard> createState() => _CarCardState();
-}
-
-class _CarCardState extends State<CarCard> {
-  bool _isFav = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _isFav = widget.car.isFavorite;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final car = widget.car;
+    final savedProvider = Provider.of<SavedCarsProvider>(context);
+    final isSaved = savedProvider.isSaved(car.id);
 
     return GestureDetector(
       onTap: () => Navigator.of(
@@ -46,7 +36,7 @@ class _CarCardState extends State<CarCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Image ─────────────────────────────────
+            // ── Image ───────────────────────────────
             Stack(
               children: [
                 ClipRRect(
@@ -59,16 +49,10 @@ class _CarCardState extends State<CarCard> {
                           height: 180,
                           width: double.infinity,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            height: 180,
-                            color: Colors.grey.shade100,
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          ),
-                          errorWidget: (_, __, ___) => _buildPlaceholder(),
+                          placeholder: (_, __) => _placeholder(),
+                          errorWidget: (_, __, ___) => _placeholder(),
                         )
-                      : _buildPlaceholder(),
+                      : _placeholder(),
                 ),
                 // Category badge
                 Positioned(
@@ -93,21 +77,44 @@ class _CarCardState extends State<CarCard> {
                     ),
                   ),
                 ),
-                // Favorite button
+                // ✅ Heart button — wired to SavedCarsProvider
                 Positioned(
                   top: 8,
                   right: 8,
                   child: GestureDetector(
-                    onTap: () => setState(() => _isFav = !_isFav),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
+                    onTap: () {
+                      savedProvider.toggle(car);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isSaved
+                                ? 'Removed from saved'
+                                : '${car.name} saved!',
+                          ),
+                          duration: const Duration(seconds: 1),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: isSaved
+                              ? Colors.grey
+                              : AppTheme.accentGreen,
+                        ),
+                      );
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSaved ? Colors.red.shade50 : Colors.white,
                         shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                          ),
+                        ],
                       ),
                       child: Icon(
-                        _isFav ? Icons.favorite : Icons.favorite_border,
-                        color: _isFav ? Colors.red : Colors.grey,
+                        isSaved ? Icons.favorite : Icons.favorite_border,
+                        color: isSaved ? Colors.red : Colors.grey,
                         size: 20,
                       ),
                     ),
@@ -116,7 +123,7 @@ class _CarCardState extends State<CarCard> {
               ],
             ),
 
-            // ── Info ──────────────────────────────────
+            // ── Info ────────────────────────────────
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -138,7 +145,7 @@ class _CarCardState extends State<CarCard> {
                         ),
                       ),
                       Text(
-                        '₹${_formatPrice(car.price)}',
+                        '₹${_fmtPrice(car.price)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
@@ -156,12 +163,11 @@ class _CarCardState extends State<CarCard> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  // Specs row
                   Row(
                     children: [
-                      _specChip(Icons.local_gas_station_outlined, car.fuelType),
+                      _chip(Icons.local_gas_station_outlined, car.fuelType),
                       const SizedBox(width: 8),
-                      _specChip(Icons.settings_outlined, car.transmission),
+                      _chip(Icons.settings_outlined, car.transmission),
                       const Spacer(),
                       Text(
                         car.sellerName,
@@ -181,30 +187,28 @@ class _CarCardState extends State<CarCard> {
     );
   }
 
-  Widget _buildPlaceholder() {
-    return Container(
-      height: 180,
-      width: double.infinity,
-      color: Colors.grey.shade100,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.directions_car_outlined,
-            size: 48,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'No Image',
-            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _placeholder() => Container(
+    height: 180,
+    width: double.infinity,
+    color: Colors.grey.shade100,
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.directions_car_outlined,
+          size: 48,
+          color: Colors.grey.shade400,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'No Image',
+          style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+        ),
+      ],
+    ),
+  );
 
-  Widget _specChip(IconData icon, String label) {
+  Widget _chip(IconData icon, String label) {
     if (label.isEmpty) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -226,14 +230,11 @@ class _CarCardState extends State<CarCard> {
     );
   }
 
-  String _formatPrice(String price) {
-    final num = int.tryParse(price.replaceAll(',', '').replaceAll('₹', ''));
-    if (num == null) return price;
-    if (num >= 100000) {
-      return '${(num / 100000).toStringAsFixed(2)} L';
-    } else if (num >= 1000) {
-      return '${(num / 1000).toStringAsFixed(1)} K';
-    }
-    return price;
+  String _fmtPrice(String p) {
+    final n = int.tryParse(p.replaceAll(',', '').replaceAll('₹', ''));
+    if (n == null) return p;
+    if (n >= 100000) return '${(n / 100000).toStringAsFixed(2)} L';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)} K';
+    return p;
   }
 }
