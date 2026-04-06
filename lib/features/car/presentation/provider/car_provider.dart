@@ -33,6 +33,10 @@ class CarProvider extends ChangeNotifier {
   }
 
   Stream<List<Car>> getCars() => _repository.getCars();
+  Future<void> refreshCars() async {
+    // Re-fetch your data OR recreate stream
+    notifyListeners();
+  }
 
   Future<void> loadCarsByCategory(String category) async {
     if (category == 'All') {

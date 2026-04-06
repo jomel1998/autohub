@@ -1,4 +1,3 @@
-// lib/features/car/presentation/pages/home_page.dart
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
 import 'package:autohub/features/car/presentation/pages/profile_page.dart';
@@ -22,10 +21,21 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // ✅ GlobalKey wires the menu icon button to the Scaffold drawer
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final _searchController = TextEditingController();
   int _currentIndex = 0;
+
+  Future<void> _onRefresh() async {
+    final carProvider = Provider.of<CarProvider>(context, listen: false);
+
+    // Refresh based on current state
+    if (carProvider.selectedCategory == 'All') {
+      // If using stream, you may need to re-trigger fetch
+      await carProvider.refreshCars(); // create this method
+    } else {
+      await carProvider.loadCarsByCategory(carProvider.selectedCategory);
+    }
+  }
 
   @override
   void dispose() {
@@ -39,20 +49,23 @@ class _HomePageState extends State<HomePage> {
     final carProvider = Provider.of<CarProvider>(context);
 
     return Scaffold(
-      key: _scaffoldKey, // ✅ attach key
-      drawer: const AppDrawer(), // ✅ functional sidebar
+      key: _scaffoldKey,
+      drawer: const AppDrawer(),
       backgroundColor: AppTheme.bgLight,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildAppBar(context, auth),
-            _buildSearchBar(carProvider),
-            Expanded(
-              child: carProvider.isSearching
-                  ? _buildSearchResults(carProvider)
-                  : _buildBrowseView(carProvider),
-            ),
-          ],
+        child: RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: Column(
+            children: [
+              _buildAppBar(context, auth),
+              _buildSearchBar(carProvider),
+              Expanded(
+                child: carProvider.isSearching
+                    ? _buildSearchResults(carProvider)
+                    : _buildBrowseView(carProvider),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -90,7 +103,10 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.home_outlined),
             label: 'Home',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Browse'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.event_available),
+            label: 'Test Drive',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.favorite_outline),
             label: 'Saved',
@@ -212,9 +228,10 @@ class _HomePageState extends State<HomePage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildQuickAction(Icons.shopping_cart_outlined, 'Buy'),
-                _buildQuickAction(Icons.sell_outlined, 'Sell'),
+                _buildQuickAction(Icons.diamond_outlined, 'Luxury'),
+                _buildQuickAction(Icons.list_alt_outlined, 'My List'),
                 _buildQuickAction(Icons.compare_arrows, 'Compare'),
+                _buildQuickAction(Icons.chat_bubble_outline, 'Chat'),
               ],
             ),
           ),
