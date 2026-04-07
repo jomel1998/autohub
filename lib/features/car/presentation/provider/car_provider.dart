@@ -1,14 +1,15 @@
 // lib/features/car/presentation/provider/car_provider.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
-import '../../data/datasources/car_supabase_data_source.dart';
-import '../../data/repositories/car_repository_impl.dart';
+import '../../../../core/cache/app_cache.dart';
+import '../../data/repositories/cached_car_repository.dart';
 import '../../domain/entities/car.dart';
 
 enum CarStatus { initial, loading, success, error }
 
 class CarProvider extends ChangeNotifier {
-  late final CarRepositoryImpl _repository;
+  // ✅ Uses CachedCarRepository instead of raw repo
+  final CachedCarRepository _repo = CachedCarRepository();
 
   CarStatus _status = CarStatus.initial;
   String _errorMessage = '';
@@ -28,16 +29,15 @@ class CarProvider extends ChangeNotifier {
   String get selectedCategory => _selectedCategory;
   String get selectedBrand => _selectedBrand;
 
-  CarProvider() {
-    _repository = CarRepositoryImpl(CarSupabaseDataSource());
-  }
+  // ── Realtime stream (home feed) ───────────────────
+  Stream<List<Car>> getCars() => _repo.getCars();
 
-  Stream<List<Car>> getCars() => _repository.getCars();
-  Future<void> refreshCars() async {
-    // Re-fetch your data OR recreate stream
-    notifyListeners();
-  }
+  // ── Instant cached snapshot ───────────────────────
+  // Returns the last-cached list immediately — no network wait.
+  // Used by home_page to render something instantly while stream connects.
+  Future<List<Car>?> getCachedSnapshot() => _repo.getCachedAllCars();
 
+  // ── Category filter ───────────────────────────────
   Future<void> loadCarsByCategory(String category) async {
     if (category == 'All') {
       _categoryResults = [];
@@ -49,7 +49,8 @@ class CarProvider extends ChangeNotifier {
     _isCategoryLoading = true;
     notifyListeners();
     try {
-      _categoryResults = await _repository.getCarsByCategory(category);
+      // Served from cache if fresh, Supabase if stale
+      _categoryResults = await _repo.getCarsByCategory(category);
     } catch (e) {
       _categoryResults = [];
       _errorMessage = e.toString();
@@ -59,6 +60,7 @@ class CarProvider extends ChangeNotifier {
     }
   }
 
+  // ── Search ────────────────────────────────────────
   Future<void> searchCars(String query) async {
     if (query.isEmpty) {
       _isSearching = false;
@@ -69,7 +71,7 @@ class CarProvider extends ChangeNotifier {
     _isSearching = true;
     _setStatus(CarStatus.loading);
     try {
-      _searchResults = await _repository.searchCars(query);
+      _searchResults = await _repo.searchCars(query);
       _setStatus(CarStatus.success);
     } catch (e) {
       _setError(e.toString());
@@ -82,10 +84,12 @@ class CarProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Add car ───────────────────────────────────────
+  // After add → cache is invalidated → stream emits fresh list
   Future<bool> addCar(Car car, {File? imageFile}) async {
     _setStatus(CarStatus.loading);
     try {
-      await _repository.addCar(car, imageFile: imageFile);
+      await _repo.addCar(car, imageFile: imageFile);
       _setStatus(CarStatus.success);
       return true;
     } catch (e) {
@@ -94,10 +98,11 @@ class CarProvider extends ChangeNotifier {
     }
   }
 
+  // ── Update car ────────────────────────────────────
   Future<bool> updateCar(Car car, {File? imageFile}) async {
     _setStatus(CarStatus.loading);
     try {
-      await _repository.updateCar(car, imageFile: imageFile);
+      await _repo.updateCar(car, imageFile: imageFile);
       _setStatus(CarStatus.success);
       return true;
     } catch (e) {
@@ -106,10 +111,11 @@ class CarProvider extends ChangeNotifier {
     }
   }
 
+  // ── Delete car ────────────────────────────────────
   Future<bool> deleteCar(String carId) async {
     _setStatus(CarStatus.loading);
     try {
-      await _repository.deleteCar(carId);
+      await _repo.deleteCar(carId);
       _setStatus(CarStatus.success);
       return true;
     } catch (e) {
@@ -117,6 +123,20 @@ class CarProvider extends ChangeNotifier {
       return false;
     }
   }
+
+  // ── Cache detail for instant detail page open ─────
+  void cacheCarDetail(Car car) => _repo.cacheCarDetail(car);
+
+  // ── Manual cache clear (logout / settings) ────────
+  Future<void> clearCache() async {
+    await AppCache.clear();
+    _categoryResults = [];
+    _searchResults = [];
+    notifyListeners();
+  }
+
+  // ── Cache stats for debug page ────────────────────
+  Future<CacheStats> getCacheStats() => AppCache.getStats();
 
   void setCategory(String c) {
     _selectedCategory = c;

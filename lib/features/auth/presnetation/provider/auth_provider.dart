@@ -11,6 +11,15 @@ class AuthProvider extends ChangeNotifier {
 
   AuthStatus get status => _status;
   String get errorMessage => _errorMessage;
+  AuthProvider() {
+    // Sync status with Supabase's own session listener
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      _status = data.session != null
+          ? AuthStatus.authenticated
+          : AuthStatus.unauthenticated;
+      notifyListeners();
+    });
+  }
 
   User? get currentUser => _client.auth.currentUser;
   bool get isLoggedIn => currentUser != null;
@@ -87,7 +96,10 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> sendPasswordResetEmail(String email) async {
     _setLoading();
     try {
-      await _client.auth.resetPasswordForEmail(email.trim());
+      await _client.auth.resetPasswordForEmail(
+        email.trim(),
+        redirectTo: 'myapp://reset-password',
+      );
       _status = AuthStatus.initial;
       notifyListeners();
       return true;

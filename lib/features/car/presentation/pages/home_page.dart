@@ -1,4 +1,3 @@
-// lib/features/car/presentation/pages/home_page.dart
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
 import 'package:flutter/material.dart';
@@ -30,9 +29,12 @@ class _HomePageState extends State<HomePage> {
   final _searchController = TextEditingController();
   int _currentIndex = 0;
 
-  //  Cached car list — persists across rebuilds caused by heart taps
+  // ✅ Cached car list — persists across rebuilds caused by heart taps
   // This prevents the StreamBuilder from showing a spinner on notifyListeners()
   List<Car>? _cachedAllCars;
+
+  // ✅ Key used to force the StreamBuilder to re-subscribe on refresh
+  Key _streamKey = UniqueKey();
 
   @override
   void dispose() {
@@ -43,12 +45,17 @@ class _HomePageState extends State<HomePage> {
   // ── Pull-to-refresh ────────────────────────────────
   // Only this triggers the RefreshIndicator spinner
   Future<void> _onRefresh(CarProvider carProvider) async {
-    if (carProvider.selectedCategory != 'All') {
+    if (carProvider.selectedCategory == 'All') {
+      // Clear the cache and reset the stream key so StreamBuilder re-subscribes
+      setState(() {
+        _cachedAllCars = null;
+        _streamKey = UniqueKey();
+      });
+      // Give the stream time to emit fresh data
+      await Future.delayed(const Duration(milliseconds: 800));
+    } else {
       await carProvider.loadCarsByCategory(carProvider.selectedCategory);
     }
-    // For 'All', the stream auto-refreshes — just add a small delay
-    // so the RefreshIndicator animation completes gracefully
-    await Future.delayed(const Duration(milliseconds: 600));
   }
 
   void _onNavTap(int i) {
@@ -171,13 +178,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
-          // Chat icon
-          IconButton(
-            icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ChatListPage())),
-          ),
+
           if (auth.isLoggedIn)
             GestureDetector(
               onTap: () => Navigator.of(
@@ -216,6 +217,7 @@ class _HomePageState extends State<HomePage> {
       color: AppTheme.primaryBlue,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: TextField(
+        autofocus: false,
         controller: _searchController,
         onChanged: (q) => carProvider.searchCars(q),
         style: const TextStyle(color: Colors.white),
@@ -263,7 +265,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             // Quick actions
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -399,12 +401,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ── Stream builder with cache ──────────────────────
-  // ✅ Key fix: once data is received, it's stored in _cachedAllCars.
+  // ✅ _streamKey forces a fresh StreamBuilder subscription on pull-to-refresh.
+  //    Once data is received, it's stored in _cachedAllCars.
   //    On subsequent rebuilds (e.g. heart tap → notifyListeners),
   //    if snapshot has no NEW data yet, we show the cached list instead
   //    of a spinner. The spinner only shows on very first load (null cache).
   Widget _buildAllCarsStream(CarProvider carProvider) {
     return StreamBuilder<List<Car>>(
+      key: _streamKey, // ✅ New key on refresh forces re-subscription
       stream: carProvider.getCars(),
       builder: (context, snapshot) {
         // New data arrived — update cache

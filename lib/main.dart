@@ -1,10 +1,13 @@
-// lib/main.dart
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
+import 'package:autohub/features/auth/presnetation/pages/reset_password.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
 import 'package:autohub/features/car/presentation/pages/splash_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:app_links/app_links.dart';
 
 import 'core/config/supabase_config.dart';
 import 'core/theme/app_theme.dart';
@@ -15,6 +18,7 @@ import 'features/car/presentation/pages/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
   await Supabase.initialize(
     url: SupabaseConfig.url,
     anonKey: SupabaseConfig.anonKey,
@@ -52,10 +56,23 @@ class _AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<_AuthGate> {
+  late final AppLinks _appLinks;
+
   @override
   void initState() {
     super.initState();
-    // Load saved cars whenever auth state changes (login / app resume)
+
+    // ── Deep link listener ─────────────────────────
+    _appLinks = AppLinks();
+    _appLinks.uriLinkStream.listen((uri) {
+      if (uri.path.contains('reset-password') && mounted) {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const ResetPasswordScreen()));
+      }
+    });
+
+    // ── Load saved cars whenever auth state changes ─
     supabase.auth.onAuthStateChange.listen((data) {
       if (data.session != null && mounted) {
         context.read<SavedCarsProvider>().loadSavedCars();
@@ -70,13 +87,22 @@ class _AuthGateState extends State<_AuthGate> {
     return StreamBuilder<AuthState>(
       stream: supabase.auth.onAuthStateChange,
       builder: (context, snapshot) {
+        // Handle saved cars here instead of initState
+        final session = snapshot.data?.session;
+        if (session != null) {
+          context.read<SavedCarsProvider>().loadSavedCars();
+        } else if (snapshot.connectionState != ConnectionState.waiting) {
+          context.read<SavedCarsProvider>().clearLocal();
+        }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (supabase.auth.currentSession != null) return const SplashScreen();
-        return const LoginPage();
+        return supabase.auth.currentSession != null
+            ? const SplashScreen()
+            : const LoginPage();
       },
     );
   }

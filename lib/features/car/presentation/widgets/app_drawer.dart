@@ -1,9 +1,11 @@
+// lib/features/car/presentation/widgets/app_drawer.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presnetation/pages/login_page.dart';
 import '../../../auth/presnetation/provider/auth_provider.dart';
 import '../pages/add_car_page.dart';
+import '../pages/cache_settings_page.dart';
 import '../pages/profile_page.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -169,6 +171,19 @@ class AppDrawer extends StatelessWidget {
 
                 const Divider(indent: 16, endIndent: 16),
 
+                _DrawerItem(
+                  icon: Icons.storage_outlined,
+                  label: 'Cache Settings',
+                  subtitle: 'Manage app data & speed',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const CacheSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
                 _DrawerItem(
                   icon: Icons.help_outline,
                   label: 'Help & Support',

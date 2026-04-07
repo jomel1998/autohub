@@ -5,6 +5,15 @@ import '../../../../core/config/supabase_config.dart';
 import '../../../../core/error/exceptions.dart';
 import '../models/car_model.dart';
 
+class CarRemoteDataSource {
+  final supabase = Supabase.instance.client;
+
+  Future<List> fetchCars() async {
+    final data = await supabase.from('cars').select();
+    return data;
+  }
+}
+
 class CarSupabaseDataSource {
   final SupabaseClient _client;
 
