@@ -1,3 +1,4 @@
+// lib/features/car/presentation/pages/home_page.dart
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
 import 'package:flutter/material.dart';
@@ -29,14 +30,28 @@ class _HomePageState extends State<HomePage> {
   final _searchController = TextEditingController();
   int _currentIndex = 0;
 
+  //  Cached car list — persists across rebuilds caused by heart taps
+  // This prevents the StreamBuilder from showing a spinner on notifyListeners()
+  List<Car>? _cachedAllCars;
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
-  // ── Bottom nav handler ─────────────────────────────
-  void _onNavTap(int i, AuthProvider auth) {
+  // ── Pull-to-refresh ────────────────────────────────
+  // Only this triggers the RefreshIndicator spinner
+  Future<void> _onRefresh(CarProvider carProvider) async {
+    if (carProvider.selectedCategory != 'All') {
+      await carProvider.loadCarsByCategory(carProvider.selectedCategory);
+    }
+    // For 'All', the stream auto-refreshes — just add a small delay
+    // so the RefreshIndicator animation completes gracefully
+    await Future.delayed(const Duration(milliseconds: 600));
+  }
+
+  void _onNavTap(int i) {
     if (i == 1) {
       Navigator.push(
         context,
@@ -54,14 +69,6 @@ class _HomePageState extends State<HomePage> {
       );
     } else {
       setState(() => _currentIndex = i);
-    }
-  }
-
-  Future<void> _onRefresh(CarProvider carProvider) async {
-    if (carProvider.isSearching) {
-      await carProvider.searchCars(_searchController.text);
-    } else {
-      await carProvider.loadCarsByCategory(carProvider.selectedCategory);
     }
   }
 
@@ -106,7 +113,7 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (i) => _onNavTap(i, auth),
+        onTap: _onNavTap,
         selectedItemColor: AppTheme.primaryBlue,
         unselectedItemColor: Colors.grey,
         items: [
@@ -164,6 +171,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+          // Chat icon
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
             onPressed: () => Navigator.of(
@@ -245,7 +253,9 @@ class _HomePageState extends State<HomePage> {
     SavedCarsProvider savedProv,
   ) {
     return RefreshIndicator(
+      //  Only pull-to-refresh triggers the spinner, not heart taps
       onRefresh: () => _onRefresh(carProvider),
+      color: AppTheme.primaryBlue,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
@@ -271,7 +281,7 @@ class _HomePageState extends State<HomePage> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            'Save at least 2 cars first to compare them',
+                            'Save at least 2 cars first to compare',
                           ),
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -335,32 +345,10 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 8),
 
+            // ✅ Fixed StreamBuilder — uses _cachedAllCars to prevent
+            //    spinner from showing when heart taps trigger notifyListeners()
             if (carProvider.selectedCategory == 'All')
-              StreamBuilder<List<Car>>(
-                stream: carProvider.getCars(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Error: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    );
-                  }
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return _buildEmptyState();
-                  }
-                  return _buildCarList(snapshot.data!);
-                },
-              )
+              _buildAllCarsStream(carProvider)
             else if (carProvider.isCategoryLoading)
               const Center(
                 child: Padding(
@@ -410,6 +398,65 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ── Stream builder with cache ──────────────────────
+  // ✅ Key fix: once data is received, it's stored in _cachedAllCars.
+  //    On subsequent rebuilds (e.g. heart tap → notifyListeners),
+  //    if snapshot has no NEW data yet, we show the cached list instead
+  //    of a spinner. The spinner only shows on very first load (null cache).
+  Widget _buildAllCarsStream(CarProvider carProvider) {
+    return StreamBuilder<List<Car>>(
+      stream: carProvider.getCars(),
+      builder: (context, snapshot) {
+        // New data arrived — update cache
+        if (snapshot.hasData) {
+          _cachedAllCars = snapshot.data;
+        }
+
+        // Show list from cache if available (covers heart-tap rebuilds)
+        if (_cachedAllCars != null) {
+          if (_cachedAllCars!.isEmpty) return _buildEmptyState();
+          return _buildCarList(_cachedAllCars!);
+        }
+
+        // True first load — no data yet at all
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        // Error
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  const Icon(Icons.wifi_off, color: Colors.grey, size: 48),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Could not load cars',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Pull down to retry',
+                    style: TextStyle(color: AppTheme.textGrey, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return _buildEmptyState();
+      },
+    );
+  }
+
   Widget _buildCarList(List<Car> cars) => ListView.builder(
     shrinkWrap: true,
     physics: const NeverScrollableScrollPhysics(),
@@ -418,8 +465,11 @@ class _HomePageState extends State<HomePage> {
     itemBuilder: (_, i) => CarCard(car: cars[i]),
   );
 
+  // ── Search results ─────────────────────────────────
   Widget _buildSearchResults(CarProvider carProvider) {
-    if (carProvider.status == CarStatus.loading) {
+    // ✅ No spinner for search either — just show results or empty
+    if (carProvider.status == CarStatus.loading &&
+        carProvider.searchResults.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (carProvider.searchResults.isEmpty) {
@@ -437,44 +487,39 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
-    return RefreshIndicator(
-      onRefresh: () => _onRefresh(carProvider),
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        itemCount: carProvider.searchResults.length,
-        itemBuilder: (_, i) => CarCard(car: carProvider.searchResults[i]),
-      ),
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: carProvider.searchResults.length,
+      itemBuilder: (_, i) => CarCard(car: carProvider.searchResults[i]),
     );
   }
 
-  Widget _buildEmptyState() => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(48),
-      child: Column(
-        children: [
-          Icon(
-            Icons.directions_car_outlined,
-            size: 80,
-            color: Colors.grey.shade300,
+  Widget _buildEmptyState() => Padding(
+    padding: const EdgeInsets.all(48),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.directions_car_outlined,
+          size: 80,
+          color: Colors.grey.shade300,
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'No cars listed yet',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textGrey,
           ),
-          const SizedBox(height: 16),
-          const Text(
-            'No cars listed yet',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textGrey,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Tap Sell Car to add the first listing',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.textGrey),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Tap Sell Car to add the first listing',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppTheme.textGrey),
+        ),
+      ],
     ),
   );
 

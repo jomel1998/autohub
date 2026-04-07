@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:autohub/features/auth/presnetation/pages/login_page.dart';
 import 'package:autohub/features/auth/presnetation/provider/auth_provider.dart';
+import 'package:autohub/features/car/presentation/pages/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
@@ -32,7 +33,6 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CarProvider()),
-        // ✅ SavedCarsProvider persists favourites across sessions
         ChangeNotifierProvider(create: (_) => SavedCarsProvider()),
       ],
       child: MaterialApp(
@@ -45,8 +45,26 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class _AuthGate extends StatelessWidget {
+class _AuthGate extends StatefulWidget {
   const _AuthGate();
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  @override
+  void initState() {
+    super.initState();
+    // Load saved cars whenever auth state changes (login / app resume)
+    supabase.auth.onAuthStateChange.listen((data) {
+      if (data.session != null && mounted) {
+        context.read<SavedCarsProvider>().loadSavedCars();
+      } else if (mounted) {
+        context.read<SavedCarsProvider>().clearLocal();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AuthState>(
@@ -57,7 +75,7 @@ class _AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (supabase.auth.currentSession != null) return const HomePage();
+        if (supabase.auth.currentSession != null) return const SplashScreen();
         return const LoginPage();
       },
     );
