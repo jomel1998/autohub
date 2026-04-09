@@ -1,3 +1,6 @@
+import '../pages/chat_page.dart';
+import '../pages/test_drive_page.dart';
+// lib/features/car/presentation/pages/car_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -322,11 +325,39 @@ class _CarDetailPageState extends State<CarDetailPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               child: Row(
                 children: [
+                  // Chat button
                   OutlinedButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      final myId =
+                          Supabase.instance.client.auth.currentUser?.id;
+                      final myName =
+                          Supabase
+                                  .instance
+                                  .client
+                                  .auth
+                                  .currentUser
+                                  ?.userMetadata?['name']
+                              as String? ??
+                          Supabase.instance.client.auth.currentUser?.email
+                              ?.split('@')
+                              .first ??
+                          'Buyer';
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChatRoomPage(
+                            otherName: car.sellerName,
+                            car: car,
+                            sellerId: car.sellerId,
+                            sellerName: car.sellerName,
+                            buyerId: myId ?? '',
+                            buyerName: myName,
+                          ),
+                        ),
+                      );
+                    },
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
+                        horizontal: 16,
                         vertical: 14,
                       ),
                       shape: RoundedRectangleBorder(
@@ -335,12 +366,33 @@ class _CarDetailPageState extends State<CarDetailPage> {
                     ),
                     child: const Icon(Icons.chat_bubble_outline),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
+                  // Test Drive button
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => TestDrivePage(car: car),
+                      ),
+                    ),
+                    icon: const Icon(Icons.event_available, size: 18),
+                    label: const Text('Test Drive'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Contact seller
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () {},
                       icon: const Icon(Icons.phone_outlined),
-                      label: const Text('Contact Seller'),
+                      label: const Text('Call Seller'),
                     ),
                   ),
                 ],
